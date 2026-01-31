@@ -16,7 +16,7 @@ using namespace glm;
 
 // 3D models
 C3dglModel camera;
-
+C3dglModel lamp;
 // The View Matrix
 mat4 matrixView;
 
@@ -38,15 +38,25 @@ bool init()
 	glEnable(GL_LIGHTING);									// --- DEPRECATED
 	glEnable(GL_LIGHT0);									// --- DEPRECATED
 
+	
+	// ---------- AMBIENT LIGHT ----------
+	GLfloat ambientLight[] = { 0.25f, 0.25f, 0.25f, 1.0f };  // soft ambient
+	glLightfv(GL_LIGHT0, GL_AMBIENT, ambientLight);
+
+
+
 	// load your 3D models here!
 	if (!camera.load("models\\camera.3ds")) return false;
+	if (!lamp.load("models\\Lamp.3ds")) return false;
+
 
 	// Initialise the View Matrix (initial position of the camera)
 	matrixView = rotate(mat4(1), radians(12.f), vec3(1, 0, 0));
 	matrixView *= lookAt(
-		vec3(0.0, 5.0, 10.0),
-		vec3(0.0, 5.0, 0.0),
-		vec3(0.0, 1.0, 0.0));
+    vec3(0.0f, 6.0f, 18.0f),   // BACK + UP
+    vec3(0.0f, 3.0f, 0.0f),    // look at table
+    vec3(0.0f, 1.0f, 0.0f));
+
 
 	// setup the screen background colour
 	glClearColor(0.18f, 0.25f, 0.22f, 1.0f);   // deep grey background
@@ -61,38 +71,160 @@ bool init()
 
 	return true;
 }
+// Returns bulb world position (in scene coords, NOT view space) in outBulbPos
+void drawLampPrimitive(const mat4& view, const vec3& basePos, float yawDeg)
+{
+	mat4 m;
+
+	// ---- metal ----
+	GLfloat metal[] = { 0.75f, 0.7f, 0.3f, 1.0f };
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, metal);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, metal);
+
+	// ---- BASE (flat on table) ----
+	mat4 baseM = view;
+	baseM = translate(baseM, basePos);
+	baseM = rotate(baseM, radians(yawDeg), vec3(0, 1, 0));
+
+	// ONLY rotate for drawing the base
+	mat4 baseDrawM = rotate(baseM, radians(-90.f), vec3(1, 0, 0));
+
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	glMultMatrixf((GLfloat*)&baseDrawM);
+	glutSolidCylinder(0.5, 0.05, 32, 2);
+
+
+	mat4 stem = baseM;
+	stem = translate(stem, vec3(0.0f, 0.05f, 0.0f)); // start just above base
+
+	// ---- GOOSENECK (smooth curve) ----
+	const int segments = 20;
+	const float segLen = 0.09f;
+	const float radius = 0.045f;
+	const float bend = 4.0f;
+
+	
+	stem = translate(stem, vec3(0, 0.05f, 0));
+
+	for (int i = 0; i < segments; i++)
+	{
+		stem = rotate(stem, radians(-bend), vec3(1, 0, 0));
+
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+		glMultMatrixf((GLfloat*)&stem);
+		glutSolidCylinder(radius, segLen, 16, 1);
+
+		stem = translate(stem, vec3(0, segLen, 0));
+	}
+
+	// ---- SOCKET ----
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	glMultMatrixf((GLfloat*)&stem);
+	glutSolidCylinder(0.09, 0.1, 16, 1);
+
+	// ---- BULB (IMPORTANT FOR LIGHT) ----
+	GLfloat bulbOff[] = { 0.8f, 0.8f, 0.8f, 1.0f };
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, bulbOff);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, bulbOff);
+
+	m = translate(stem, vec3(0, 0.14f, 0));
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	glMultMatrixf((GLfloat*)&m);
+	glutSolidSphere(0.14, 24, 24);
+}
+
+
 
 void renderScene(mat4& matrixView, float time, float deltaTime)
 {
 	mat4 m;
+	vec3 tablePos = vec3(10.0f, 0.0f, 0.0f);
+	float tableTopY = 1.0f;
 
-	// setup materials - grey
-	GLfloat rgbaGrey[] = { 0.6f, 0.6f, 0.6f, 1.0f };		// --- DEPRECATED
-	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, rgbaGrey);	// --- DEPRECATED
-	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, rgbaGrey);	// --- DEPRECATED
+	// ---------- MATERIAL: GREY ----------
+	GLfloat rgbaGrey[] = { 0.6f, 0.6f, 0.6f, 1.0f };
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, rgbaGrey);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, rgbaGrey);
 
-	// camera
+	// ---------- CAMERA MODEL ----------
 	m = matrixView;
-	m = translate(m, vec3(-3.0f, 0, 0.0f));
+	m = translate(m, vec3(-3.0f, 0.0f, 0.0f));
 	m = rotate(m, radians(180.f), vec3(0.0f, 1.0f, 0.0f));
 	m = scale(m, vec3(0.04f, 0.04f, 0.04f));
 	camera.render(m);
 
-	// setup materials - blue
-	GLfloat rgbaBlue[] = { 0.2f, 0.2f, 0.8f, 1.0f };		// --- DEPRECATED
-	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, rgbaBlue);	// --- DEPRECATED
-	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, rgbaBlue);	// --- DEPRECATED
+	// ---------- TABLE MATERIAL (WOOD) ----------
+	GLfloat woodCol[] = { 0.55f, 0.35f, 0.18f, 1.0f };
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, woodCol);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, woodCol);
 
-	// teapot
+	// ---------- TABLE TOP ----------
 	m = matrixView;
-	m = translate(m, vec3(15.0f, 0, 0.0f));
+	m = translate(m, tablePos + vec3(0.0f, tableTopY, 0.0f));
+	m = scale(m, vec3(12.0f, 0.4f, 7.0f));
+
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	glMultMatrixf((GLfloat*)&m);
+	glutSolidCube(1.0);
+
+
+
+	// ---------- TABLE LEGS ----------
+	vec3 legs[4] = {
+	vec3(5.4f, -1.2f,  3.2f),
+	vec3(-5.4f, -1.2f,  3.2f),
+	vec3(5.4f, -1.2f, -3.2f),
+	vec3(-5.4f, -1.2f, -3.2f)
+	};
+
+	for (int i = 0; i < 4; i++)
+	{
+		m = matrixView;
+		m = translate(m, tablePos + vec3(0.0f, tableTopY, 0.0f) + legs[i]);
+		m = scale(m, vec3(0.3f, 2.4f, 0.3f));
+
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+		glMultMatrixf((GLfloat*)&m);
+		glutSolidCube(1.0);
+
+		vec3 tablePos = vec3(15.0f, 0.0f, 9.0f);
+		float tableTopY = 1.0f;
+	}
+
+	// ---------- LAMPS (ON TABLE) ----------
+	vec3 lamp1Base = tablePos + vec3(-4.8f, tableTopY + 0.25f, -2.0f);
+	vec3 lamp2Base = tablePos + vec3(4.8f, tableTopY + 0.25f, 2.5f);
+
+	drawLampPrimitive(matrixView, lamp1Base, -25.f);
+	drawLampPrimitive(matrixView, lamp2Base, 25.f);
+
+
+
+	// ---------- MATERIAL: BLUE ----------
+	GLfloat rgbaBlue[] = { 0.2f, 0.2f, 0.8f, 1.0f };
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, rgbaBlue);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, rgbaBlue);
+
+	
+	// ---------- TEAPOT (ON THE TABLE) ----------
+	m = matrixView;
+	m = translate(m, tablePos + vec3(4.0f, tableTopY + 0.6f, 1.0f));
+
 	m = rotate(m, radians(120.f), vec3(0.0f, 1.0f, 0.0f));
-	// the GLUT objects require the Model View Matrix setup
-	glMatrixMode(GL_MODELVIEW);								// --- DEPRECATED
-	glLoadIdentity();										// --- DEPRECATED
-	glMultMatrixf((GLfloat*)&m);							// --- DEPRECATED
-	glutSolidTeapot(2.0);
+
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	glMultMatrixf((GLfloat*)&m);
+	glutSolidTeapot(0.6);
+
 }
+
 
 void onRender()
 {
