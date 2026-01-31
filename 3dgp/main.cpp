@@ -28,6 +28,8 @@ float _fov = 60.f;		// field of view (zoom)
 
 bool init()
 {
+	
+
 	// rendering states
 	glEnable(GL_DEPTH_TEST);	// depth test is necessary for most 3D scenes
 	glEnable(GL_NORMALIZE);		// normalization is needed by AssImp library models
@@ -38,16 +40,50 @@ bool init()
 	glEnable(GL_LIGHTING);									// --- DEPRECATED
 	glEnable(GL_LIGHT0);									// --- DEPRECATED
 
-	
+	// ---------- POINT LIGHT (LAMP) : GL_LIGHT1 ----------
+	glEnable(GL_LIGHT1);
+
+	// Point light colors
+	GLfloat pAmbient[] = { 0.0f, 0.0f, 0.0f, 1.0f };  // usually 0 for point lamps
+	GLfloat pDiffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };  // lamp brightness
+	GLfloat pSpecular[] = { 1.0f, 1.0f, 1.0f, 1.0f };  // shiny highlights
+
+	glLightfv(GL_LIGHT1, GL_AMBIENT, pAmbient);
+	glLightfv(GL_LIGHT1, GL_DIFFUSE, pDiffuse);
+	glLightfv(GL_LIGHT1, GL_SPECULAR, pSpecular);
+
+	// Attenuation (so it fades with distance)
+	glLightf(GL_LIGHT1, GL_CONSTANT_ATTENUATION, 1.0f);
+	glLightf(GL_LIGHT1, GL_LINEAR_ATTENUATION, 0.08f);
+	glLightf(GL_LIGHT1, GL_QUADRATIC_ATTENUATION, 0.02f);
+
+	// ---------- SECOND POINT LIGHT (LAMP 2) : GL_LIGHT2 ----------
+	glEnable(GL_LIGHT2);
+
+	glLightfv(GL_LIGHT2, GL_AMBIENT, pAmbient);
+	glLightfv(GL_LIGHT2, GL_DIFFUSE, pDiffuse);
+	glLightfv(GL_LIGHT2, GL_SPECULAR, pSpecular);
+
+	glLightf(GL_LIGHT2, GL_CONSTANT_ATTENUATION, 1.0f);
+	glLightf(GL_LIGHT2, GL_LINEAR_ATTENUATION, 0.08f);
+	glLightf(GL_LIGHT2, GL_QUADRATIC_ATTENUATION, 0.02f);
+
+
 	// ---------- AMBIENT LIGHT ----------
 	GLfloat ambientLight[] = { 0.25f, 0.25f, 0.25f, 1.0f };  // soft ambient
 	glLightfv(GL_LIGHT0, GL_AMBIENT, ambientLight);
 
+	// ---------- DIRECTIONAL DIFFUSE LIGHT ----------
+	GLfloat dirDiffuse[] = { 0.9f, 0.9f, 0.9f, 1.0f };   // brightness
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, dirDiffuse);
 
+	
+
+	
 
 	// load your 3D models here!
 	if (!camera.load("models\\camera.3ds")) return false;
-	if (!lamp.load("models\\Lamp.3ds")) return false;
+
 
 
 	// Initialise the View Matrix (initial position of the camera)
@@ -72,7 +108,7 @@ bool init()
 	return true;
 }
 // Returns bulb world position (in scene coords, NOT view space) in outBulbPos
-void drawLampPrimitive(const mat4& view, const vec3& basePos, float yawDeg)
+void drawLampPrimitive(const mat4& view, const vec3& basePos, float yawDeg, vec3& outBulbWorldPos)
 {
 	mat4 m;
 
@@ -81,35 +117,41 @@ void drawLampPrimitive(const mat4& view, const vec3& basePos, float yawDeg)
 	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, metal);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, metal);
 
-	// ---- BASE (flat on table) ----
-	mat4 baseM = view;
-	baseM = translate(baseM, basePos);
-	baseM = rotate(baseM, radians(yawDeg), vec3(0, 1, 0));
+	// Build a MODEL matrix (world space) so we can extract bulb position correctly
+	mat4 baseModel = mat4(1.0f);
+	baseModel = translate(baseModel, basePos);
+	baseModel = rotate(baseModel, radians(yawDeg), vec3(0, 1, 0));
 
-	// ONLY rotate for drawing the base
-	mat4 baseDrawM = rotate(baseM, radians(-90.f), vec3(1, 0, 0));
+	// View-space version for drawing (same as your old approach)
+	mat4 baseM = view * baseModel;
+
+	// ---- BASE (flat on table) ----
+	mat4 baseDrawM = baseM;
+	baseDrawM = rotate(baseDrawM, radians(-90.f), vec3(1, 0, 0));
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	glMultMatrixf((GLfloat*)&baseDrawM);
 	glutSolidCylinder(0.5, 0.05, 32, 2);
 
-
-	mat4 stem = baseM;
-	stem = translate(stem, vec3(0.0f, 0.05f, 0.0f)); // start just above base
-
-	// ---- GOOSENECK (smooth curve) ----
+	// ---- GOOSENECK ----
 	const int segments = 20;
 	const float segLen = 0.09f;
 	const float radius = 0.045f;
 	const float bend = 4.0f;
 
-	
-	stem = translate(stem, vec3(0, 0.05f, 0));
+	// View-space stem for drawing
+	mat4 stem = baseM;
+	stem = translate(stem, vec3(0.0f, 0.05f, 0.0f));
+
+	// World-space stem for computing bulb position
+	mat4 stemModel = baseModel;
+	stemModel = translate(stemModel, vec3(0.0f, 0.05f, 0.0f));
 
 	for (int i = 0; i < segments; i++)
 	{
 		stem = rotate(stem, radians(-bend), vec3(1, 0, 0));
+		stemModel = rotate(stemModel, radians(-bend), vec3(1, 0, 0));
 
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
@@ -117,6 +159,7 @@ void drawLampPrimitive(const mat4& view, const vec3& basePos, float yawDeg)
 		glutSolidCylinder(radius, segLen, 16, 1);
 
 		stem = translate(stem, vec3(0, segLen, 0));
+		stemModel = translate(stemModel, vec3(0, segLen, 0));
 	}
 
 	// ---- SOCKET ----
@@ -125,16 +168,29 @@ void drawLampPrimitive(const mat4& view, const vec3& basePos, float yawDeg)
 	glMultMatrixf((GLfloat*)&stem);
 	glutSolidCylinder(0.09, 0.1, 16, 1);
 
-	// ---- BULB (IMPORTANT FOR LIGHT) ----
+	// ---- BULB ----
 	GLfloat bulbOff[] = { 0.8f, 0.8f, 0.8f, 1.0f };
 	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, bulbOff);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, bulbOff);
 
+	// View-space bulb draw matrix
 	m = translate(stem, vec3(0, 0.14f, 0));
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	glMultMatrixf((GLfloat*)&m);
 	glutSolidSphere(0.14, 24, 24);
+
+	// World-space bulb position (THIS is what we need for glLightfv)
+	mat4 bulbModel = translate(stemModel, vec3(0, 0.14f, 0));
+	outBulbWorldPos = vec3(bulbModel[3]); // translation column
+}
+
+
+vec3 bulbPosSimple(const vec3& lampBase)
+{
+	// lampBase is the base disk center sitting on the table
+	// Adjust these until the glowing sphere sits inside your drawn bulb
+	return lampBase + vec3(0.0f, 1.85f, -0.65f);
 }
 
 
@@ -142,44 +198,82 @@ void drawLampPrimitive(const mat4& view, const vec3& basePos, float yawDeg)
 void renderScene(mat4& matrixView, float time, float deltaTime)
 {
 	mat4 m;
-	vec3 tablePos = vec3(10.0f, 0.0f, 0.0f);
-	float tableTopY = 1.0f;
 
-	// ---------- MATERIAL: GREY ----------
+		// ===== TEST MODE: only the lamp point light =====
+		glDisable(GL_LIGHT0);
+		glEnable(GL_LIGHT1);
+		glEnable(GL_LIGHT2);
+
+		vec3 tablePos = vec3(10.0f, 0.0f, 0.0f);
+		float tableTopY = 1.0f;
+
+		vec3 lamp1Base = tablePos + vec3(-4.8f, tableTopY + 0.25f, -2.0f);
+		vec3 lamp2Base = tablePos + vec3(4.8f, tableTopY + 0.25f, 2.5f);
+
+		vec3 bulb1World = bulbPosSimple(lamp1Base);
+		vec3 bulb2World = bulbPosSimple(lamp2Base);
+
+		// Load view into OpenGL BEFORE setting light positions
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+		glMultMatrixf((GLfloat*)&matrixView);
+
+		// Point light at bulb 1
+		GLfloat pPos[] = { bulb1World.x, bulb1World.y, bulb1World.z, 1.0f };
+		glLightfv(GL_LIGHT1, GL_POSITION, pPos);
+
+		// Point light at bulb 2
+		GLfloat pPos2[] = { bulb2World.x, bulb2World.y, bulb2World.z, 1.0f };
+		glLightfv(GL_LIGHT2, GL_POSITION, pPos2);
+
+		// Debug: draw glowing markers where bulbs are
+		GLfloat emiss[] = { 1,1,1,1 };
+		glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, emiss);
+
+		mat4 dbg = matrixView;
+		dbg = translate(dbg, bulb1World + vec3(0.6f, -0.5f, -0.5f)); 
+		glLoadIdentity();
+		glMultMatrixf((GLfloat*)&dbg);
+		glutSolidSphere(0.12, 16, 16);
+
+		mat4 dbg2 = matrixView;
+		dbg2 = translate(dbg2, bulb2World + vec3(-0.5f, -0.5f, -0.5f));
+		glLoadIdentity();
+		glMultMatrixf((GLfloat*)&dbg2);
+		glutSolidSphere(0.12, 16, 16);
+
+	GLfloat noEmiss[] = { 0,0,0,1 };
+	glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, noEmiss);
+
+	// ---------- CAMERA MODEL ----------
 	GLfloat rgbaGrey[] = { 0.6f, 0.6f, 0.6f, 1.0f };
 	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, rgbaGrey);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, rgbaGrey);
 
-	// ---------- CAMERA MODEL ----------
 	m = matrixView;
 	m = translate(m, vec3(-3.0f, 0.0f, 0.0f));
 	m = rotate(m, radians(180.f), vec3(0.0f, 1.0f, 0.0f));
-	m = scale(m, vec3(0.04f, 0.04f, 0.04f));
+	m = scale(m, vec3(0.04f));
 	camera.render(m);
 
-	// ---------- TABLE MATERIAL (WOOD) ----------
+	// ---------- TABLE ----------
 	GLfloat woodCol[] = { 0.55f, 0.35f, 0.18f, 1.0f };
 	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, woodCol);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, woodCol);
 
-	// ---------- TABLE TOP ----------
 	m = matrixView;
 	m = translate(m, tablePos + vec3(0.0f, tableTopY, 0.0f));
 	m = scale(m, vec3(12.0f, 0.4f, 7.0f));
-
-	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	glMultMatrixf((GLfloat*)&m);
 	glutSolidCube(1.0);
 
-
-
-	// ---------- TABLE LEGS ----------
+	// Legs
 	vec3 legs[4] = {
-	vec3(5.4f, -1.2f,  3.2f),
-	vec3(-5.4f, -1.2f,  3.2f),
-	vec3(5.4f, -1.2f, -3.2f),
-	vec3(-5.4f, -1.2f, -3.2f)
+		vec3(5.4f, -1.2f,  3.2f),
+		vec3(-5.4f, -1.2f,  3.2f),
+		vec3(5.4f, -1.2f, -3.2f),
+		vec3(-5.4f, -1.2f, -3.2f)
 	};
 
 	for (int i = 0; i < 4; i++)
@@ -187,43 +281,32 @@ void renderScene(mat4& matrixView, float time, float deltaTime)
 		m = matrixView;
 		m = translate(m, tablePos + vec3(0.0f, tableTopY, 0.0f) + legs[i]);
 		m = scale(m, vec3(0.3f, 2.4f, 0.3f));
-
-		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
 		glMultMatrixf((GLfloat*)&m);
 		glutSolidCube(1.0);
-
-		vec3 tablePos = vec3(15.0f, 0.0f, 9.0f);
-		float tableTopY = 1.0f;
 	}
 
-	// ---------- LAMPS (ON TABLE) ----------
-	vec3 lamp1Base = tablePos + vec3(-4.8f, tableTopY + 0.25f, -2.0f);
-	vec3 lamp2Base = tablePos + vec3(4.8f, tableTopY + 0.25f, 2.5f);
+	// ---------- DRAW THE LAMPS (visual only) ----------
+	vec3 dummy1(0), dummy2(0);
+	drawLampPrimitive(matrixView, lamp1Base, -25.f, dummy1);
+	drawLampPrimitive(matrixView, lamp2Base, 25.f, dummy2);
 
-	drawLampPrimitive(matrixView, lamp1Base, -25.f);
-	drawLampPrimitive(matrixView, lamp2Base, 25.f);
-
-
-
-	// ---------- MATERIAL: BLUE ----------
+	// ---------- TEAPOT (make it shiny so specular shows) ----------
 	GLfloat rgbaBlue[] = { 0.2f, 0.2f, 0.8f, 1.0f };
+	GLfloat specWhite[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, rgbaBlue);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, rgbaBlue);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specWhite);
+	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 64.0f);
 
-	
-	// ---------- TEAPOT (ON THE TABLE) ----------
 	m = matrixView;
 	m = translate(m, tablePos + vec3(4.0f, tableTopY + 0.6f, 1.0f));
-
 	m = rotate(m, radians(120.f), vec3(0.0f, 1.0f, 0.0f));
-
-	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	glMultMatrixf((GLfloat*)&m);
 	glutSolidTeapot(0.6);
-
 }
+
 
 
 void onRender()
