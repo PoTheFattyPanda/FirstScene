@@ -1,10 +1,10 @@
-#include <iostream>
+﻿#include <iostream>
 #include <GL/glew.h>
 #include <3dgl/3dgl.h>
 #include <GL/glut.h>
 #include <GL/freeglut_ext.h>
 GLuint woodTex = 0;
-// Include GLM core features
+
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 
@@ -12,12 +12,12 @@ GLuint woodTex = 0;
 GLuint progLamp = 0;
 
 // uniform locations
-GLint uLightPosVS = -1;      // vec3[2]
-GLint uLightColor = -1;      // vec3[2]
-GLint uLightAtt = -1;      // vec3[2] (constant, linear, quad)
-GLint uKd = -1;              // vec3 diffuse
-GLint uKs = -1;              // vec3 specular
-GLint uShininess = -1;       // float
+GLint uLightPosVS = -1;      
+GLint uLightColor = -1;      
+GLint uLightAtt = -1;      
+GLint uKd = -1;             
+GLint uKs = -1;              
+GLint uShininess = -1;      
 GLint uUseTex = -1;
 GLint uTex = -1;
 using namespace std;
@@ -27,6 +27,7 @@ using namespace glm;
 // 3D models
 C3dglModel camera;
 C3dglModel lamp;
+C3dglModel vase;
 // The View Matrix
 mat4 matrixView;
 
@@ -56,13 +57,13 @@ GLuint loadBMP(const char* filename)
 	unsigned short bpp = *(unsigned short*)&(header[0x1C]);
 	unsigned int compression = *(unsigned int*)&(header[0x1E]);
 
-	// Only supports 24-bit uncompressed BMP
+	
 	if (bpp != 24 || compression != 0 || width == 0 || height == 0) { fclose(file); return 0; }
 
-	// Move to pixel data
+	
 	fseek(file, dataPos, SEEK_SET);
 
-	// BMP rows are padded to multiples of 4 bytes
+	
 	int rowPadded = (width * 3 + 3) & (~3);
 	unsigned char* data = new unsigned char[width * height * 3];
 	unsigned char* row = new unsigned char[rowPadded];
@@ -77,7 +78,7 @@ GLuint loadBMP(const char* filename)
 			return 0;
 		}
 
-		// BMP is bottom-up, so flip vertically
+	
 		unsigned int dstY = (height - 1 - y);
 		memcpy(data + dstY * width * 3, row, width * 3);
 	}
@@ -226,28 +227,28 @@ bool init()
 	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
 	// rendering states
-	glEnable(GL_DEPTH_TEST);	// depth test is necessary for most 3D scenes
-	glEnable(GL_NORMALIZE);		// normalization is needed by AssImp library models
-	glShadeModel(GL_SMOOTH);	// smooth shading mode is the default one; try GL_FLAT here!
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);	// this is the default one; try GL_LINE!
+	glEnable(GL_DEPTH_TEST);	
+	glEnable(GL_NORMALIZE);		
+	glShadeModel(GL_SMOOTH);	
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);	
 
 	// setup lighting
-	glEnable(GL_LIGHTING);									// --- DEPRECATED
-	glEnable(GL_LIGHT0);									// --- DEPRECATED
+	glEnable(GL_LIGHTING);									
+	glEnable(GL_LIGHT0);									
 
-	// ---------- POINT LIGHT (LAMP) : GL_LIGHT1 ----------
+	
 	glEnable(GL_LIGHT1);
 
 	// Point light colors
-	GLfloat pAmbient[] = { 0.0f, 0.0f, 0.0f, 1.0f };  // usually 0 for point lamps
-	GLfloat pDiffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };  // lamp brightness
-	GLfloat pSpecular[] = { 1.0f, 1.0f, 1.0f, 1.0f };  // shiny highlights
+	GLfloat pAmbient[] = { 0.0f, 0.0f, 0.0f, 1.0f };  
+	GLfloat pDiffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f }; 
+	GLfloat pSpecular[] = { 1.0f, 1.0f, 1.0f, 1.0f }; 
 
 	glLightfv(GL_LIGHT1, GL_AMBIENT, pAmbient);
 	glLightfv(GL_LIGHT1, GL_DIFFUSE, pDiffuse);
 	glLightfv(GL_LIGHT1, GL_SPECULAR, pSpecular);
 
-	// Attenuation (so it fades with distance)
+	
 	glLightf(GL_LIGHT1, GL_CONSTANT_ATTENUATION, 1.0f);
 	glLightf(GL_LIGHT1, GL_LINEAR_ATTENUATION, 0.08f);
 	glLightf(GL_LIGHT1, GL_QUADRATIC_ATTENUATION, 0.02f);
@@ -278,7 +279,7 @@ bool init()
 
 	// load your 3D models here!
 	if (!camera.load("models\\camera.3ds")) return false;
-	
+	if (!vase.load("models\\Vase.fbx")) return false;
 
 
 	// Initialise the View Matrix (initial position of the camera)
@@ -342,12 +343,12 @@ void drawLampPrimitive(const mat4& view, const vec3& basePos, float yawDeg, vec3
 	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, metal);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, metal);
 
-	// Build a MODEL matrix (world space) so we can extract bulb position correctly
+	
 	mat4 baseModel = mat4(1.0f);
 	baseModel = translate(baseModel, basePos);
 	baseModel = rotate(baseModel, radians(yawDeg), vec3(0, 1, 0));
 
-	// View-space version for drawing (same as your old approach)
+	
 	mat4 baseM = view * baseModel;
 
 	// ---- BASE (flat on table) ----
@@ -413,8 +414,7 @@ void drawLampPrimitive(const mat4& view, const vec3& basePos, float yawDeg, vec3
 
 vec3 bulbPosSimple(const vec3& lampBase)
 {
-	// lampBase is the base disk center sitting on the table
-	// Adjust these until the glowing sphere sits inside your drawn bulb
+
 	return lampBase + vec3(0.0f, 1.85f, -0.65f);
 }
 
@@ -625,9 +625,9 @@ void renderScene(mat4& matrixView, float time, float deltaTime)
 	camera.render(m);
 	glUseProgram(progLamp);
 
-	glDisable(GL_LIGHTING);          // stop fixed pipeline lighting interfering
+	glDisable(GL_LIGHTING);         
 
-	glUniform1i(uUseTex, 1);         // <<< THIS is the big missing line
+	glUniform1i(uUseTex, 1);         
 
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, woodTex);
@@ -676,9 +676,34 @@ void renderScene(mat4& matrixView, float time, float deltaTime)
 		legM = translate(legM, tablePos + vec3(0.0f, tableTopY, 0.0f) + legs[i]);
 		legM = scale(legM, vec3(0.3f, 2.4f, 0.3f));
 
-		// More vertical tiling so it doesn't stretch
 		drawTexturedBox(legM, woodTex, 1.0f, 3.0f);
 	}
+
+	// ---------- VASE ----------
+	
+	GLfloat vaseDiff[] = { 0.75f, 0.75f, 0.80f, 1.0f };
+	GLfloat vaseSpec[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, vaseDiff);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, vaseDiff);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, vaseSpec);
+	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 64.0f);
+
+	
+	glUseProgram(0);
+	glEnable(GL_LIGHTING);
+
+	mat4 vaseM = matrixView;
+
+	
+	vaseM = translate(vaseM, tablePos + vec3(-8.5f, tableTopY + 0.0f, 10.5f));
+
+	// Scale down (FBX often imports huge)
+	vaseM = scale(vaseM, vec3(0.008f));  
+
+
+	vase.render(vaseM);
+
+
 
 	// ---------- CHAIRS ----------
 	float chairY = -2.0f; // floor level for chair position (legs go down from seat)
@@ -700,12 +725,15 @@ void renderScene(mat4& matrixView, float time, float deltaTime)
 	glUniform1i(uUseTex, 0);
 	glUseProgram(0);
 
-	glEnable(GL_LIGHTING);           // restore for your old lamp drawing + teapot
+	glEnable(GL_LIGHTING);          
 
 	// ---------- DRAW THE LAMPS (visual only) ----------
 	vec3 dummy1(0), dummy2(0);
 	drawLampPrimitive(matrixView, lamp1Base, -25.f, dummy1);
 	drawLampPrimitive(matrixView, lamp2Base, 25.f, dummy2);
+
+	
+
 
 	// ---------- TEAPOT (make it shiny so specular shows) ----------
 	GLfloat rgbaBlue[] = { 0.2f, 0.2f, 0.8f, 1.0f };
@@ -903,7 +931,7 @@ int main(int argc, char **argv)
 	C3dglLogger::log("Version: {}", (const char*)glGetString(GL_VERSION));
 	C3dglLogger::log("");
 
-	// init light and everything � not a GLUT or callback function!
+	// init light and everything – not a GLUT or callback function!
 	if (!init())
 	{
 		C3dglLogger::log("Application failed to initialise\r\n");
