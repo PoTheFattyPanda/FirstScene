@@ -9,7 +9,17 @@ GLuint woodTex = 0;
 #include "glm/gtc/matrix_transform.hpp"
 
 #pragma comment (lib, "glew32.lib")
+GLuint progLamp = 0;
 
+// uniform locations
+GLint uLightPosVS = -1;      // vec3[2]
+GLint uLightColor = -1;      // vec3[2]
+GLint uLightAtt = -1;      // vec3[2] (constant, linear, quad)
+GLint uKd = -1;              // vec3 diffuse
+GLint uKs = -1;              // vec3 specular
+GLint uShininess = -1;       // float
+GLint uUseTex = -1;
+GLint uTex = -1;
 using namespace std;
 using namespace _3dgl;
 using namespace glm;
@@ -89,7 +99,116 @@ GLuint loadBMP(const char* filename)
 	return textureID;
 }
 
+GLuint compileShader(GLenum type, const char* src)
+{
+	GLuint s = glCreateShader(type);
+	glShaderSource(s, 1, &src, nullptr);
+	glCompileShader(s);
 
+	GLint ok = 0;
+	glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+	if (!ok)
+	{
+		char log[2048];
+		glGetShaderInfoLog(s, sizeof(log), nullptr, log);
+		std::cout << "Shader compile error:\n" << log << std::endl;
+		glDeleteShader(s);
+		return 0;
+	}
+	return s;
+}
+
+GLuint linkProgram(GLuint vs, GLuint fs)
+{
+	GLuint p = glCreateProgram();
+	glAttachShader(p, vs);
+	glAttachShader(p, fs);
+	glLinkProgram(p);
+
+	GLint ok = 0;
+	glGetProgramiv(p, GL_LINK_STATUS, &ok);
+	if (!ok)
+	{
+		char log[2048];
+		glGetProgramInfoLog(p, sizeof(log), nullptr, log);
+		std::cout << "Program link error:\n" << log << std::endl;
+		glDeleteProgram(p);
+		return 0;
+	}
+	return p;
+}
+
+const char* lampVS = R"GLSL(
+#version 120
+
+varying vec3 vPosVS;     // position in view space
+varying vec3 vNormalVS;  // normal in view space
+
+void main()
+{
+    // view-space position
+    vec4 posVS = gl_ModelViewMatrix * gl_Vertex;
+    vPosVS = posVS.xyz;
+
+    // view-space normal
+    vNormalVS = normalize(gl_NormalMatrix * gl_Normal);
+
+    gl_TexCoord[0] = gl_MultiTexCoord0; // keep your texcoords
+    gl_Position = gl_ProjectionMatrix * posVS;
+}
+)GLSL";
+
+const char* lampFS = R"GLSL(
+#version 120
+
+uniform vec3 uLightPosVS[2];
+uniform vec3 uLightColor[2];
+uniform vec3 uLightAtt[2];   // (kc, kl, kq)
+
+uniform vec3 uKd;
+uniform vec3 uKs;
+uniform float uShininess;
+
+uniform sampler2D uTex;
+uniform int uUseTex;
+
+varying vec3 vPosVS;
+varying vec3 vNormalVS;
+
+void main()
+{
+    vec3 N = normalize(vNormalVS);
+    vec3 V = normalize(-vPosVS); // camera is at (0,0,0) in view space
+
+    vec3 base = uKd;
+    if (uUseTex == 1)
+        base *= texture2D(uTex, gl_TexCoord[0].st).rgb;
+
+    vec3 total = vec3(0.0);
+
+    for (int i = 0; i < 2; i++)
+    {
+        vec3 Lvec = uLightPosVS[i] - vPosVS;
+        float dist = length(Lvec);
+        vec3 L = normalize(Lvec);
+
+        float att = 1.0 / (uLightAtt[i].x + uLightAtt[i].y * dist + uLightAtt[i].z * dist * dist);
+
+        // diffuse
+        float ndl = max(dot(N, L), 0.0);
+        vec3 diff = base * ndl;
+
+        // specular (Blinn-Phong)
+        vec3 H = normalize(L + V);
+        float specPow = pow(max(dot(N, H), 0.0), uShininess);
+        vec3 spec = uKs * specPow;
+
+        total += (diff + spec) * uLightColor[i] * att;
+    }
+
+    gl_FragColor = vec4(total, 1.0);
+}
+)GLSL";
 
 bool init()
 {
@@ -170,6 +289,33 @@ bool init()
 
 	// setup the screen background colour
 	glClearColor(0.18f, 0.25f, 0.22f, 1.0f);   // deep grey background
+	// ---- build per-fragment shader program ----
+	GLuint vs = compileShader(GL_VERTEX_SHADER, lampVS);
+	GLuint fs = compileShader(GL_FRAGMENT_SHADER, lampFS);
+	if (!vs || !fs) return false;
+
+	progLamp = linkProgram(vs, fs);
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+	if (!progLamp) return false;
+
+	// get uniform locations
+	uLightPosVS = glGetUniformLocation(progLamp, "uLightPosVS");
+	uLightColor = glGetUniformLocation(progLamp, "uLightColor");
+	uLightAtt = glGetUniformLocation(progLamp, "uLightAtt");
+	uKd = glGetUniformLocation(progLamp, "uKd");
+	uKs = glGetUniformLocation(progLamp, "uKs");
+	uShininess = glGetUniformLocation(progLamp, "uShininess");
+
+	// texture uniforms
+	uTex = glGetUniformLocation(progLamp, "uTex");
+	uUseTex = glGetUniformLocation(progLamp, "uUseTex");
+
+
+	glUseProgram(progLamp);
+	glUniform1i(uTex, 0); // texture unit 0
+	glUseProgram(0);
+
 
 	cout << endl;
 	cout << "Use:" << endl;
@@ -180,6 +326,9 @@ bool init()
 	cout << endl;
 
 	return true;
+
+	
+
 }
 // Returns bulb world position (in scene coords, NOT view space) in outBulbPos
 void drawLampPrimitive(const mat4& view, const vec3& basePos, float yawDeg, vec3& outBulbWorldPos)
@@ -395,6 +544,11 @@ void renderScene(mat4& matrixView, float time, float deltaTime)
 		vec3 bulb1World = bulbPosSimple(lamp1Base);
 		vec3 bulb2World = bulbPosSimple(lamp2Base);
 
+		// Convert bulb positions from WORLD to VIEW space for the shader
+		vec3 bulb1VS = vec3(matrixView * vec4(bulb1World, 1.0f));
+		vec3 bulb2VS = vec3(matrixView * vec4(bulb2World, 1.0f));
+
+
 		// Load view into OpenGL BEFORE setting light positions
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
@@ -437,6 +591,34 @@ void renderScene(mat4& matrixView, float time, float deltaTime)
 	m = rotate(m, radians(180.f), vec3(0.0f, 1.0f, 0.0f));
 	m = scale(m, vec3(0.04f));
 	camera.render(m);
+	glUseProgram(progLamp);
+
+	glDisable(GL_LIGHTING);          // stop fixed pipeline lighting interfering
+
+	glUniform1i(uUseTex, 1);         // <<< THIS is the big missing line
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, woodTex);
+
+	// light positions (2 lights)
+	GLfloat lp[6] = { bulb1VS.x, bulb1VS.y, bulb1VS.z,  bulb2VS.x, bulb2VS.y, bulb2VS.z };
+	glUniform3fv(uLightPosVS, 2, lp);
+
+	// light colors (white lamps)
+	GLfloat lc[6] = { 1,1,1,  1,1,1 };
+	glUniform3fv(uLightColor, 2, lc);
+
+	// attenuation (use your values)
+	GLfloat att[6] = {
+		1.0f, 0.08f, 0.02f,   // lamp 1
+		1.0f, 0.08f, 0.02f    // lamp 2
+	};
+	glUniform3fv(uLightAtt, 2, att);
+
+	// material (tweak if you want)
+	glUniform3f(uKd, 1.0f, 1.0f, 1.0f);     // diffuse base
+	glUniform3f(uKs, 1.0f, 1.0f, 1.0f);     // specular
+	glUniform1f(uShininess, 64.0f);
 
 	// ---------- TABLE (TEXTURED BOX) ----------
 	mat4 tableM = matrixView;
@@ -481,6 +663,12 @@ void renderScene(mat4& matrixView, float time, float deltaTime)
 
 	// Right chair
 	drawChair(matrixView, tablePos + vec3(7.3f, chairY, 0.0f), -90.0f, woodTex);
+	
+		glBindTexture(GL_TEXTURE_2D, 0);
+	glUniform1i(uUseTex, 0);
+	glUseProgram(0);
+
+	glEnable(GL_LIGHTING);           // restore for your old lamp drawing + teapot
 
 	// ---------- DRAW THE LAMPS (visual only) ----------
 	vec3 dummy1(0), dummy2(0);
