@@ -326,6 +326,55 @@ void drawTexturedBox(const mat4& modelView, GLuint tex, float tileU, float tileV
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glDisable(GL_TEXTURE_2D);
 }
+void drawChair(const mat4& view, const vec3& chairPos, float yawDeg, GLuint tex)
+{
+	// Chair sizes 
+	const float seatW = 2.4f;
+	const float seatH = 0.15f;
+	const float seatD = 2.4f;
+
+	const float legW = 0.12f;
+	const float legH = 2.0f;   // chair height
+	const float legD = 0.12f;
+
+	const float backW = seatW;
+	const float backH = 3.2f;
+	const float backD = 0.15f;
+
+	// Base transform (world -> view)
+	mat4 base = view;
+	base = glm::translate(base, chairPos);
+	base = glm::rotate(base, glm::radians(yawDeg), vec3(0, 1, 0));
+
+	// ---- SEAT ----
+	mat4 seatM = base;
+	seatM = glm::translate(seatM, vec3(0.0f, legH, 0.0f));
+	seatM = glm::scale(seatM, vec3(seatW, seatH, seatD));
+	drawTexturedBox(seatM, tex, 2.0f, 2.0f);
+
+	// ---- BACKREST ----
+	mat4 backM = base;
+	backM = glm::translate(backM, vec3(0.0f, legH + backH * 0.5f, -seatD * 0.5f + backD * 0.5f));
+	backM = glm::scale(backM, vec3(backW, backH, backD));
+	drawTexturedBox(backM, tex, 2.0f, 2.0f);
+
+	// ---- LEGS (4) ----
+	vec3 legOff[4] =
+	{
+		vec3(seatW * 0.5f - legW * 0.5f, legH * 0.5f,  seatD * 0.5f - legD * 0.5f),
+		vec3(-seatW * 0.5f + legW * 0.5f, legH * 0.5f,  seatD * 0.5f - legD * 0.5f),
+		vec3(seatW * 0.5f - legW * 0.5f, legH * 0.5f, -seatD * 0.5f + legD * 0.5f),
+		vec3(-seatW * 0.5f + legW * 0.5f, legH * 0.5f, -seatD * 0.5f + legD * 0.5f)
+	};
+
+	for (int i = 0; i < 4; i++)
+	{
+		mat4 legM = base;
+		legM = glm::translate(legM, vec3(legOff[i].x, legOff[i].y, legOff[i].z));
+		legM = glm::scale(legM, vec3(legW, legH, legD));
+		drawTexturedBox(legM, tex, 1.0f, 3.0f);
+	}
+}
 
 void renderScene(mat4& matrixView, float time, float deltaTime)
 {
@@ -416,6 +465,22 @@ void renderScene(mat4& matrixView, float time, float deltaTime)
 		// More vertical tiling so it doesn't stretch
 		drawTexturedBox(legM, woodTex, 1.0f, 3.0f);
 	}
+
+	// ---------- CHAIRS ----------
+	float chairY = -2.0f; // floor level for chair position (legs go down from seat)
+	float chairOffset = 4.8f; // distance from table center
+
+	// Front chair (facing table)
+	drawChair(matrixView, tablePos + vec3(0.0f, chairY, chairOffset), 180.0f, woodTex);
+
+	// Back chair
+	drawChair(matrixView, tablePos + vec3(0.0f, chairY, -chairOffset), 0.0f, woodTex);
+
+	// Left chair
+	drawChair(matrixView, tablePos + vec3(-7.3f, chairY, 0.0f), 90.0f, woodTex);
+
+	// Right chair
+	drawChair(matrixView, tablePos + vec3(7.3f, chairY, 0.0f), -90.0f, woodTex);
 
 	// ---------- DRAW THE LAMPS (visual only) ----------
 	vec3 dummy1(0), dummy2(0);
