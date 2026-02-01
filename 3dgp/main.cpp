@@ -37,6 +37,7 @@ vec3 _acc(0), _vel(0);	// camera acceleration and velocity vectors
 float _fov = 60.f;		// field of view (zoom)
 #include <cstdio>
 
+
 GLuint loadBMP(const char* filename)
 {
 	FILE* file = nullptr;
@@ -212,7 +213,8 @@ void main()
 
 bool init()
 {
-	
+	glEnable(GL_LIGHT1);
+	glEnable(GL_LIGHT2);
 	glEnable(GL_TEXTURE_2D);
 
 	woodTex = loadBMP("models\\WoodTable.bmp");
@@ -524,9 +526,35 @@ void drawChair(const mat4& view, const vec3& chairPos, float yawDeg, GLuint tex)
 		drawTexturedBox(legM, tex, 1.0f, 3.0f);
 	}
 }
+vec3 computeBulbWorldPos(const vec3& basePos, float yawDeg)
+{
+	mat4 baseModel(1.0f);
+	baseModel = translate(baseModel, basePos);
+	baseModel = rotate(baseModel, radians(yawDeg), vec3(0, 1, 0));
+
+	// move up onto base disk
+	mat4 stemModel = translate(baseModel, vec3(0.0f, 0.05f, 0.0f));
+
+	// same chain as your lamp drawing
+	const int segments = 20;
+	const float segLen = 0.09f;
+	const float bend = 4.0f;
+
+	for (int i = 0; i < segments; i++)
+	{
+		stemModel = rotate(stemModel, radians(-bend), vec3(1, 0, 0));
+		stemModel = translate(stemModel, vec3(0, segLen, 0));
+	}
+
+	mat4 bulbModel = translate(stemModel, vec3(0.0f, 0.14f, 0.0f));
+
+	return vec3(bulbModel[3]);
+
+}
 
 void renderScene(mat4& matrixView, float time, float deltaTime)
 {
+	
 	mat4 m;
 
 		// ===== TEST MODE: only the lamp point light =====
@@ -541,39 +569,43 @@ void renderScene(mat4& matrixView, float time, float deltaTime)
 		vec3 lamp1Base = tablePos + vec3(-4.8f, tableTopY + 0.25f, -2.0f);
 		vec3 lamp2Base = tablePos + vec3(4.8f, tableTopY + 0.25f, 2.5f);
 
-		vec3 bulb1World = bulbPosSimple(lamp1Base);
-		vec3 bulb2World = bulbPosSimple(lamp2Base);
+		float lamp1Yaw = -25.0f;
+		float lamp2Yaw = 25.0f;
+
+		vec3 bulb1World = computeBulbWorldPos(lamp1Base, lamp1Yaw);
+		vec3 bulb2World = computeBulbWorldPos(lamp2Base, lamp2Yaw);
+
 
 		// Convert bulb positions from WORLD to VIEW space for the shader
 		vec3 bulb1VS = vec3(matrixView * vec4(bulb1World, 1.0f));
 		vec3 bulb2VS = vec3(matrixView * vec4(bulb2World, 1.0f));
 
-
+		
 		// Load view into OpenGL BEFORE setting light positions
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
 		glMultMatrixf((GLfloat*)&matrixView);
 
-		// Point light at bulb 1
-		GLfloat pPos[] = { bulb1World.x, bulb1World.y, bulb1World.z, 1.0f };
-		glLightfv(GL_LIGHT1, GL_POSITION, pPos);
-
-		// Point light at bulb 2
+		GLfloat pPos1[] = { bulb1World.x, bulb1World.y, bulb1World.z, 1.0f };
 		GLfloat pPos2[] = { bulb2World.x, bulb2World.y, bulb2World.z, 1.0f };
+
+		glLightfv(GL_LIGHT1, GL_POSITION, pPos1);
 		glLightfv(GL_LIGHT2, GL_POSITION, pPos2);
+
+		
 
 		// Debug: draw glowing markers where bulbs are
 		GLfloat emiss[] = { 1,1,1,1 };
 		glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, emiss);
 
 		mat4 dbg = matrixView;
-		dbg = translate(dbg, bulb1World + vec3(0.6f, -0.5f, -0.5f)); 
+		dbg = translate(dbg, bulb1World);
 		glLoadIdentity();
 		glMultMatrixf((GLfloat*)&dbg);
 		glutSolidSphere(0.12, 16, 16);
 
 		mat4 dbg2 = matrixView;
-		dbg2 = translate(dbg2, bulb2World + vec3(-0.5f, -0.5f, -0.5f));
+		dbg2 = translate(dbg2, bulb2World);
 		glLoadIdentity();
 		glMultMatrixf((GLfloat*)&dbg2);
 		glutSolidSphere(0.12, 16, 16);
@@ -877,7 +909,7 @@ int main(int argc, char **argv)
 		C3dglLogger::log("Application failed to initialise\r\n");
 		return 0;
 	}
-
+	
 	// enter GLUT event processing cycle
 	glutMainLoop();
 
