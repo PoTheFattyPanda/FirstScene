@@ -3,7 +3,7 @@
 #include <3dgl/3dgl.h>
 #include <GL/glut.h>
 #include <GL/freeglut_ext.h>
-
+GLuint woodTex = 0;
 // Include GLM core features
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
@@ -25,10 +25,84 @@ float maxspeed = 4.f;	// camera max speed
 float accel = 4.f;		// camera acceleration
 vec3 _acc(0), _vel(0);	// camera acceleration and velocity vectors
 float _fov = 60.f;		// field of view (zoom)
+#include <cstdio>
+
+GLuint loadBMP(const char* filename)
+{
+	FILE* file = nullptr;
+	fopen_s(&file, filename, "rb");
+	if (!file) return 0;
+
+	unsigned char header[54];
+	if (fread(header, 1, 54, file) != 54) { fclose(file); return 0; }
+
+	// Must start with BM
+	if (header[0] != 'B' || header[1] != 'M') { fclose(file); return 0; }
+
+	unsigned int dataPos = *(unsigned int*)&(header[0x0A]);
+	unsigned int width = *(unsigned int*)&(header[0x12]);
+	unsigned int height = *(unsigned int*)&(header[0x16]);
+	unsigned short bpp = *(unsigned short*)&(header[0x1C]);
+	unsigned int compression = *(unsigned int*)&(header[0x1E]);
+
+	// Only supports 24-bit uncompressed BMP
+	if (bpp != 24 || compression != 0 || width == 0 || height == 0) { fclose(file); return 0; }
+
+	// Move to pixel data
+	fseek(file, dataPos, SEEK_SET);
+
+	// BMP rows are padded to multiples of 4 bytes
+	int rowPadded = (width * 3 + 3) & (~3);
+	unsigned char* data = new unsigned char[width * height * 3];
+	unsigned char* row = new unsigned char[rowPadded];
+
+	for (unsigned int y = 0; y < height; y++)
+	{
+		if (fread(row, 1, rowPadded, file) != (size_t)rowPadded)
+		{
+			delete[] row;
+			delete[] data;
+			fclose(file);
+			return 0;
+		}
+
+		// BMP is bottom-up, so flip vertically
+		unsigned int dstY = (height - 1 - y);
+		memcpy(data + dstY * width * 3, row, width * 3);
+	}
+
+	delete[] row;
+	fclose(file);
+
+	GLuint textureID = 0;
+	glGenTextures(1, &textureID);
+	glBindTexture(GL_TEXTURE_2D, textureID);
+
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_BGR, GL_UNSIGNED_BYTE, data);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	delete[] data;
+	return textureID;
+}
+
+
 
 bool init()
 {
 	
+	glEnable(GL_TEXTURE_2D);
+
+	woodTex = loadBMP("models\\WoodTable.bmp");
+	if (!woodTex) return false;
+
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
 	// rendering states
 	glEnable(GL_DEPTH_TEST);	// depth test is necessary for most 3D scenes
@@ -83,7 +157,7 @@ bool init()
 
 	// load your 3D models here!
 	if (!camera.load("models\\camera.3ds")) return false;
-
+	
 
 
 	// Initialise the View Matrix (initial position of the camera)
@@ -194,15 +268,74 @@ vec3 bulbPosSimple(const vec3& lampBase)
 }
 
 
+void drawTexturedBox(const mat4& modelView, GLuint tex, float tileU, float tileV)
+{
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, tex);
+
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	glMultMatrixf((GLfloat*)&modelView);
+
+	glBegin(GL_QUADS);
+
+	// TOP (+Y)
+	glNormal3f(0, 1, 0);
+	glTexCoord2f(0, 0);        glVertex3f(-0.5f, 0.5f, -0.5f);
+	glTexCoord2f(tileU, 0);    glVertex3f(0.5f, 0.5f, -0.5f);
+	glTexCoord2f(tileU, tileV); glVertex3f(0.5f, 0.5f, 0.5f);
+	glTexCoord2f(0, tileV);    glVertex3f(-0.5f, 0.5f, 0.5f);
+
+	// BOTTOM (-Y)
+	glNormal3f(0, -1, 0);
+	glTexCoord2f(0, 0);        glVertex3f(-0.5f, -0.5f, 0.5f);
+	glTexCoord2f(tileU, 0);    glVertex3f(0.5f, -0.5f, 0.5f);
+	glTexCoord2f(tileU, tileV); glVertex3f(0.5f, -0.5f, -0.5f);
+	glTexCoord2f(0, tileV);    glVertex3f(-0.5f, -0.5f, -0.5f);
+
+	// FRONT (+Z)
+	glNormal3f(0, 0, 1);
+	glTexCoord2f(0, 0);        glVertex3f(-0.5f, -0.5f, 0.5f);
+	glTexCoord2f(tileU, 0);    glVertex3f(0.5f, -0.5f, 0.5f);
+	glTexCoord2f(tileU, tileV); glVertex3f(0.5f, 0.5f, 0.5f);
+	glTexCoord2f(0, tileV);    glVertex3f(-0.5f, 0.5f, 0.5f);
+
+	// BACK (-Z)
+	glNormal3f(0, 0, -1);
+	glTexCoord2f(0, 0);        glVertex3f(0.5f, -0.5f, -0.5f);
+	glTexCoord2f(tileU, 0);    glVertex3f(-0.5f, -0.5f, -0.5f);
+	glTexCoord2f(tileU, tileV); glVertex3f(-0.5f, 0.5f, -0.5f);
+	glTexCoord2f(0, tileV);    glVertex3f(0.5f, 0.5f, -0.5f);
+
+	// RIGHT (+X)
+	glNormal3f(1, 0, 0);
+	glTexCoord2f(0, 0);        glVertex3f(0.5f, -0.5f, 0.5f);
+	glTexCoord2f(tileU, 0);    glVertex3f(0.5f, -0.5f, -0.5f);
+	glTexCoord2f(tileU, tileV); glVertex3f(0.5f, 0.5f, -0.5f);
+	glTexCoord2f(0, tileV);    glVertex3f(0.5f, 0.5f, 0.5f);
+
+	// LEFT (-X)
+	glNormal3f(-1, 0, 0);
+	glTexCoord2f(0, 0);        glVertex3f(-0.5f, -0.5f, -0.5f);
+	glTexCoord2f(tileU, 0);    glVertex3f(-0.5f, -0.5f, 0.5f);
+	glTexCoord2f(tileU, tileV); glVertex3f(-0.5f, 0.5f, 0.5f);
+	glTexCoord2f(0, tileV);    glVertex3f(-0.5f, 0.5f, -0.5f);
+
+	glEnd();
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glDisable(GL_TEXTURE_2D);
+}
 
 void renderScene(mat4& matrixView, float time, float deltaTime)
 {
 	mat4 m;
 
 		// ===== TEST MODE: only the lamp point light =====
-		glDisable(GL_LIGHT0);
-		glEnable(GL_LIGHT1);
-		glEnable(GL_LIGHT2);
+	glEnable(GL_LIGHT0);
+	glEnable(GL_LIGHT1);
+	glEnable(GL_LIGHT2);
+
 
 		vec3 tablePos = vec3(10.0f, 0.0f, 0.0f);
 		float tableTopY = 1.0f;
@@ -256,34 +389,32 @@ void renderScene(mat4& matrixView, float time, float deltaTime)
 	m = scale(m, vec3(0.04f));
 	camera.render(m);
 
-	// ---------- TABLE ----------
-	GLfloat woodCol[] = { 0.55f, 0.35f, 0.18f, 1.0f };
-	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, woodCol);
-	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, woodCol);
+	// ---------- TABLE (TEXTURED BOX) ----------
+	mat4 tableM = matrixView;
+	tableM = translate(tableM, tablePos + vec3(0.0f, tableTopY, 0.0f));
+	tableM = scale(tableM, vec3(12.0f, 0.4f, 7.0f));
 
-	m = matrixView;
-	m = translate(m, tablePos + vec3(0.0f, tableTopY, 0.0f));
-	m = scale(m, vec3(12.0f, 0.4f, 7.0f));
-	glLoadIdentity();
-	glMultMatrixf((GLfloat*)&m);
-	glutSolidCube(1.0);
+	// Repeat texture across the top
+	drawTexturedBox(tableM, woodTex, 4.0f, 2.0f);
 
-	// Legs
+
+	// ---------- TABLE LEGS (TEXTURED BOXES) ----------
+	
 	vec3 legs[4] = {
-		vec3(5.4f, -1.2f,  3.2f),
-		vec3(-5.4f, -1.2f,  3.2f),
-		vec3(5.4f, -1.2f, -3.2f),
-		vec3(-5.4f, -1.2f, -3.2f)
+	vec3(5.4f, -1.2f,  3.2f),
+	vec3(-5.4f, -1.2f,  3.2f),
+	vec3(5.4f, -1.2f, -3.2f),
+	vec3(-5.4f, -1.2f, -3.2f)
 	};
 
 	for (int i = 0; i < 4; i++)
 	{
-		m = matrixView;
-		m = translate(m, tablePos + vec3(0.0f, tableTopY, 0.0f) + legs[i]);
-		m = scale(m, vec3(0.3f, 2.4f, 0.3f));
-		glLoadIdentity();
-		glMultMatrixf((GLfloat*)&m);
-		glutSolidCube(1.0);
+		mat4 legM = matrixView;
+		legM = translate(legM, tablePos + vec3(0.0f, tableTopY, 0.0f) + legs[i]);
+		legM = scale(legM, vec3(0.3f, 2.4f, 0.3f));
+
+		// More vertical tiling so it doesn't stretch
+		drawTexturedBox(legM, woodTex, 1.0f, 3.0f);
 	}
 
 	// ---------- DRAW THE LAMPS (visual only) ----------
